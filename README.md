@@ -27,13 +27,26 @@ No es un lab ni un CTF: es la auditoría real de una app propia en producción, 
 
 10/10 hallazgos corregidos y verificados. Detalle completo en [`reports/2026-10-30-beacon-audit.md`](./reports/2026-10-30-beacon-audit.md).
 
+## 📊 Resumen de severidad (pasada del 2 nov 2026)
+
+Regresión completa de los 10 hallazgos de arriba (los 10 siguen corregidos, ninguno regresionó) más revisión del código nuevo desde esa fecha (ecosistema de emails, forgot/reset-password, borrado de cuenta, motor SQLite, y el paso de Stripe de dos tiers a un plan único).
+
+| # | Hallazgo | Severidad | Estado |
+|---|----------|-----------|--------|
+| 12 | Sin `.gitignore` en el proyecto — riesgo latente de subir `.env` con credenciales reales | 🟠 Medio | ✅ Corregido |
+| 13 | Comparación no constant-time + sin rate-limit en tokens de un solo uso (reset de contraseña, verificación de email) | 🟡 Bajo | ✅ Corregido |
+| 14 | Sin rate-limit en `/api/billing/checkout` | 🟡 Bajo | ✅ Corregido |
+
+3/3 hallazgos nuevos corregidos y verificados, 10/10 de la pasada anterior confirmados sin regresión. Detalle completo en [`reports/2026-11-02-beacon-audit-pass2.md`](./reports/2026-11-02-beacon-audit-pass2.md).
+
 ---
 
 ## 📁 Estructura
 
 ```
 reports/
-  2026-10-30-beacon-audit.md   # primera pasada completa (10 findings)
+  2026-10-30-beacon-audit.md         # primera pasada completa (10 findings)
+  2026-11-02-beacon-audit-pass2.md   # segunda pasada: regresión + código nuevo (3 findings)
 ```
 
 Cada nueva pasada de testing (manual, automatizada, o motivada por una feature nueva) se agrega como un archivo nuevo en `reports/`, nombrado `YYYY-MM-DD-beacon-<tema>.md`, y se refleja en este README.
