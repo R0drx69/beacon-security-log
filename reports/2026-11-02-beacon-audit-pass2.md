@@ -1,45 +1,45 @@
-# 🛰️ Beacon — Security Audit, pasada 2 (2 nov 2026)
+# 🛰️ Beacon — Security Audit, Pass 2 (Nov 2, 2026)
 
-- **Objetivo:** Beacon (SaaS de growth para LinkedIn — perfil, contenido con IA, comentarios autónomos vía extensión de Chrome, pagos con Stripe)
-- **Tipo:** Code review + regresión de la pasada anterior contra una instancia propia (producción real del autor)
-- **Alcance:** todo lo cubierto en la [pasada del 30 oct](./2026-10-30-beacon-audit.md) (re-verificado) **más** el código nuevo desde entonces: ecosistema de emails (`email.js` reescrito, job programado de recordatorio), `forgot-password`/`reset-password` (servidor + páginas), borrado de cuenta (`handleDeleteAccount`), `db-sqlite.js` (motor de base de datos real), `apps/extension/content-script.js` (no estaba en el alcance de la pasada 1), y el paso de Stripe de dos tiers (`content`/`engage`) a un plan único
-- **Metodología:** revisión manual del código fuente completo + grep dirigido por patrón sobre todo el árbol; cada hallazgo nuevo corregido y verificado (sintaxis + desplegado a la instancia real) antes de cerrarlo
-- **Autor:** R0drx69
+- **Target:** Beacon (LinkedIn growth SaaS — profile audit, AI content generation, autonomous commenting via a Chrome extension, Stripe payments)
+- **Type:** Code review + regression of the previous pass against the author's own live instance (real production)
+- **Scope:** everything covered in the [Oct 30 pass](./2026-10-30-beacon-audit.md) (re-verified) **plus** all code added since then: the email ecosystem (`email.js` rewrite, scheduled reminder job), `forgot-password`/`reset-password` (server + pages), account deletion (`handleDeleteAccount`), `db-sqlite.js` (the real database engine), `apps/extension/content-script.js` (not in Pass 1's scope), and the move from two Stripe tiers (`content`/`engage`) to a single plan
+- **Methodology:** full manual source review + targeted pattern-grep across the whole tree; every new finding fixed and verified (syntax + deployed to the real instance) before closing it
+- **Author:** R0drx69
 
 ---
 
-## 📊 Resumen
+## 📊 Summary
 
-| # | Hallazgo | Severidad | Estado |
+| # | Finding | Severity | Status |
 |---|----------|-----------|--------|
-| 12 | Sin `.gitignore` en el proyecto — riesgo latente de subir `.env` con credenciales reales | 🟠 Medio | ✅ Corregido |
-| 13 | Comparación no constant-time + sin rate-limit en tokens de un solo uso (reset de contraseña, verificación de email) | 🟡 Bajo | ✅ Corregido |
-| 14 | Sin rate-limit en `/api/billing/checkout` | 🟡 Bajo | ✅ Corregido |
+| 12 | No `.gitignore` in the project — latent risk of committing `.env` with real credentials | 🟠 Medium | ✅ Fixed |
+| 13 | Non-constant-time comparison + no rate-limit on one-time tokens (password reset, email verification) | 🟡 Low | ✅ Fixed |
+| 14 | No rate-limit on `/api/billing/checkout` | 🟡 Low | ✅ Fixed |
 
-Los hallazgos #1-11 de la pasada anterior se re-verificaron en el código actual: **los 11 siguen corregidos, ninguno regresionó** (detalle en la sección de regresión, abajo).
+Findings #1-11 from the previous pass were re-verified against the current code: **all 11 are still fixed, none regressed** (detail in the regression section below).
 
 ---
 
-## 🟠 Hallazgo 12 — Sin `.gitignore` en todo el proyecto
+## 🟠 Finding 12 — No `.gitignore` anywhere in the project
 
-**Dónde:** raíz del proyecto (`C:\Users\rodri\Desktop\beacon\beacon\`) y cada subcarpeta — no existía ningún `.gitignore`, en ningún nivel.
+**Where:** project root (`C:\Users\rodri\Desktop\beacon\beacon\`) and every subfolder — no `.gitignore` existed at any level.
 
-**Problema:**
-El proyecto real no está bajo control de versiones todavía (no hay carpeta `.git`), así que hoy no hay ningún repositorio desde el que `.env` pueda filtrarse. Pero el autor sí usa git activamente para otro propósito relacionado (este mismo log de seguridad), y el patrón de "crear un repo cuando llega el momento de compartir/respaldar el código" ya se demostró real una vez: es exactamente lo que pasó con `RESEND_API_KEY.txt`, que vivió en texto plano sin ninguna protección hasta que se encontró y se pidió borrarlo a mano.
+**Problem:**
+The real project isn't under version control yet (no `.git` folder), so today there's no repository for `.env` to leak through. But the author does actively use git for a related purpose (this very security log), and the pattern of "spin up a repo once it's time to share/back up the code" already proved real once: it's exactly what happened with `RESEND_API_KEY.txt`, which sat in plaintext with zero protection until it was found and flagged for manual deletion.
 
-Si alguna vez se corre `git init` en este proyecto (para respaldarlo, abrir un PR, o compartirlo) y después un `git add -A` sin haber creado antes un `.gitignore`, **`.env` se subiría tal cual** — y `.env` contiene, hoy mismo, claves reales de Stripe (`STRIPE_SECRET_KEY`), Anthropic, Google OAuth, LinkedIn OAuth y Resend. A diferencia de `RESEND_API_KEY.txt` (una sola clave), esto expondría las cinco de golpe.
+If `git init` is ever run in this project (to back it up, open a PR, or share it) followed by a `git add -A` without a `.gitignore` already in place, **`.env` would be committed as-is** — and `.env` currently holds real credentials for Stripe (`STRIPE_SECRET_KEY`), Anthropic, Google OAuth, LinkedIn OAuth, and Resend. Unlike `RESEND_API_KEY.txt` (a single key), this would expose all five at once.
 
-**Fix:** `.gitignore` en la raíz del proyecto, cubriendo `.env`/`.env.local` (en cualquier carpeta), el archivo de clave de Resend en texto plano por si vuelve a aparecer, la base de datos SQLite local (datos reales de usuarios una vez en uso) y los artefactos habituales (`node_modules/`, logs, archivos de SO).
+**Fix:** a `.gitignore` at the project root, covering `.env`/`.env.local` (in any folder), the plaintext Resend key file in case it ever reappears, the local SQLite database (real user data once in use), and the usual build artifacts (`node_modules/`, logs, OS files).
 
 ```gitignore
-# Secretos reales — nunca versionar
+# Real secrets — never commit
 .env
 .env.local
 **/.env
 **/.env.local
 *RESEND_API_KEY*
 
-# Base de datos local (contiene datos reales de usuarios una vez en uso)
+# Local database (holds real user data once in use)
 apps/web/data/*.sqlite3
 apps/web/data/*.sqlite3-shm
 apps/web/data/*.sqlite3-wal
@@ -54,17 +54,17 @@ Thumbs.db
 
 ---
 
-## 🟡 Hallazgo 13 — Comparación no constant-time + sin rate-limit en tokens de un solo uso
+## 🟡 Finding 13 — Non-constant-time comparison + no rate-limit on one-time tokens
 
-**Dónde:** `server.js` — `handleResetPassword()` y `handleVerifyEmail()`.
+**Where:** `server.js` — `handleResetPassword()` and `handleVerifyEmail()`.
 
-**Problema:**
-Dos cosas, misma raíz que el hallazgo #8 de la pasada anterior (comparación no constant-time del token de extensión), aplicadas aquí a tokens más sensibles — el de reset de contraseña en concreto controla un cambio real de credencial, no solo una lectura:
+**Problem:**
+Two issues, same root cause as finding #8 from the previous pass (non-constant-time comparison of the extension token), applied here to more sensitive tokens — the password-reset one in particular gates a real credential change, not just a read:
 
-1. **Comparación no constant-time:** `Object.values(data.users).find(u => u.passwordResetToken === token)` — un `===` plano sobre un secreto filtra tiempo proporcional a cuántos caracteres coinciden antes de la primera diferencia. El token es 192 bits de hex aleatorio (`crypto.randomBytes(24)`), así que esto es defensa en profundidad, no un ataque práctico por sí solo — mismo matiz que ya se documentó para el hallazgo #8.
-2. **`handleResetPassword` no tenía ningún rate-limit**, a diferencia de `handleForgotPassword` (5/hora), `handleLogin` (15/15min) y `handleDeleteAccount` (10/15min por cuenta). Con 192 bits de entropía, el rate-limit tampoco es lo que hace inviable la fuerza bruta aquí — pero deja esta ruta inconsistente con el resto de rutas que manejan un secreto de un solo uso.
+1. **Non-constant-time comparison:** `Object.values(data.users).find(u => u.passwordResetToken === token)` — a plain `===` on a secret leaks timing proportional to how many characters match before the first difference. The token is 192 bits of random hex (`crypto.randomBytes(24)`), so this is defense-in-depth, not a practical attack on its own — same caveat already noted for finding #8.
+2. **`handleResetPassword` had no rate-limit at all**, unlike `handleForgotPassword` (5/hour), `handleLogin` (15/15min), and `handleDeleteAccount` (10/15min per account). With 192 bits of entropy, rate-limiting isn't what makes brute-force infeasible here either — but it left this route inconsistent with every other route handling a one-time secret.
 
-**Fix:** helper compartido `constantTimeTokenMatch(candidates, token, field)` (usa `crypto.timingSafeEqual`, comprobando longitud antes como ya hacía `userFromExtensionToken`), aplicado tanto en `handleResetPassword` como en `handleVerifyEmail`. Rate-limit nuevo en `handleResetPassword`, 10/hora por IP — holgado para no fastidiar un reintento legítimo, pero presente.
+**Fix:** a shared `constantTimeTokenMatch(candidates, token, field)` helper (uses `crypto.timingSafeEqual`, checking length first, same pattern `userFromExtensionToken` already used), applied in both `handleResetPassword` and `handleVerifyEmail`. New rate-limit on `handleResetPassword`, 10/hour per IP — generous enough not to block a legitimate retry, but present.
 
 ```js
 function constantTimeTokenMatch(candidates, token, field) {
@@ -81,49 +81,49 @@ function constantTimeTokenMatch(candidates, token, field) {
 
 ---
 
-## 🟡 Hallazgo 14 — Sin rate-limit en `/api/billing/checkout`
+## 🟡 Finding 14 — No rate-limit on `/api/billing/checkout`
 
-**Dónde:** `server.js` — `handleBillingCheckout()`.
+**Where:** `server.js` — `handleBillingCheckout()`.
 
-**Problema:** cualquier cuenta autenticada (o una sesión robada vía XSS/dispositivo compartido) podía llamar a este endpoint en bucle sin ningún tope, cada llamada creando una Checkout Session real contra la API de Stripe. No mueve dinero hasta que alguien completa el pago en la página de Stripe, así que el daño práctico es ruido contra la API/dashboard de Stripe, no un riesgo financiero directo — pero es la única ruta autenticada de todo el archivo que no tenía ningún límite.
+**Problem:** any authenticated account (or a session stolen via XSS/a shared device) could call this endpoint in a loop with no cap, each call creating a real Stripe Checkout Session. No money moves until someone actually completes payment on Stripe's own page, so the practical damage is API/dashboard noise rather than direct financial risk — but it was the only authenticated route in the whole file with no limit at all.
 
-**Fix:** rate-limit de 20/hora por usuario, mismo patrón que el resto de rutas autenticadas del archivo.
+**Fix:** a 20/hour per-user rate-limit, matching the pattern used by every other authenticated route in the file.
 
 ---
 
-## ✅ Regresión de la pasada anterior (30 oct 2026) — sin hallazgos nuevos, los 11 siguen en pie
+## ✅ Regression check on the previous pass (Oct 30, 2026) — no new findings, all 11 hold
 
-Se re-verificó en el código actual, uno por uno:
+Each one re-verified against the current code:
 
-| # | Hallazgo original | Estado ahora |
+| # | Original finding | Status now |
 |---|---|---|
-| 1 | Account takeover vía OAuth sin verificar `email_verified` | ✅ el chequeo `profile.email_verified !== false` sigue presente en `linkedin-oauth.js` y `google-oauth.js` |
-| 2 | Bypass de rate-limit vía `X-Forwarded-For` falsificado | ✅ `clientIp()` sigue ignorando el header salvo `TRUST_PROXY=1` |
-| 3 | Prompt injection en el comentario autónomo | ✅ `isSafeAutonomousComment()` intacta en `comment-picker.js`, mismas reglas (sin URL/@handle/teléfono, <600 chars) |
-| 4 | Sin cabeceras de endurecimiento HTTP | ✅ CSP/X-Frame-Options/nosniff/Referrer-Policy siguen aplicándose a toda respuesta |
-| 5 | Path traversal — prefix bypass en `serveStatic()` | ✅ el chequeo con separador de ruta sigue ahí |
-| 6 | Replay del webhook de Stripe | ✅ tolerancia de 5 minutos sobre el timestamp sigue activa |
-| 7 | Cookie de sesión sin flag `Secure` | ✅ `Secure` condicional a `isHttps(req)` sigue en `auth.js` |
-| 8 | Comparación no constant-time del token de extensión | ✅ `userFromExtensionToken` sigue usando `crypto.timingSafeEqual` |
-| 9 | XSS defensivo en `audit.html` | ✅ `item.score` sigue pasando por `escapeHtml()` |
-| 10 | IDOR en `/api/extension/report` | ✅ el chequeo `plan.userId === user.id` / `c.userId === user.id` sigue presente |
-| 11 | `DEV_FORCE_PRO` activo en el entorno real | ✅ confirmado `DEV_FORCE_PRO=0` en el `.env` real a fecha de esta pasada |
+| 1 | Account takeover via OAuth without checking `email_verified` | ✅ the `profile.email_verified !== false` check is still present in `linkedin-oauth.js` and `google-oauth.js` |
+| 2 | Rate-limit bypass via spoofed `X-Forwarded-For` | ✅ `clientIp()` still ignores the header unless `TRUST_PROXY=1` |
+| 3 | Prompt injection in the autonomous comment pipeline | ✅ `isSafeAutonomousComment()` intact in `comment-picker.js`, same rules (no URL/@handle/phone, <600 chars) |
+| 4 | No HTTP hardening headers | ✅ CSP/X-Frame-Options/nosniff/Referrer-Policy still applied to every response |
+| 5 | Path traversal — prefix bypass in `serveStatic()` | ✅ the separator-aware check is still there |
+| 6 | Stripe webhook replay | ✅ the 5-minute timestamp tolerance is still active |
+| 7 | Session cookie missing the `Secure` flag | ✅ `Secure` conditional on `isHttps(req)` is still in `auth.js` |
+| 8 | Non-constant-time comparison of the extension token | ✅ `userFromExtensionToken` still uses `crypto.timingSafeEqual` |
+| 9 | Defensive XSS in `audit.html` | ✅ `item.score` still goes through `escapeHtml()` |
+| 10 | IDOR in `/api/extension/report` | ✅ the `plan.userId === user.id` / `c.userId === user.id` check is still present |
+| 11 | `DEV_FORCE_PRO` active in the real environment | ✅ confirmed `DEV_FORCE_PRO=0` in the real `.env` as of this pass |
 
 ---
 
-## ✅ Código nuevo revisado, sin hallazgos de seguridad
+## ✅ New code reviewed, no security findings
 
-- **Ecosistema de emails** (`email.js` reescrito, job programado `checkStalePlansAndRemind`): no inserta nada controlado por el usuario en HTML sin escapar; los triggers de Stripe (bienvenida, aviso de baja) usan datos que ya pasaron por la verificación de firma del webhook, no entrada directa del llamador.
-- **`forgot-password` / `reset-password`** (rutas + páginas): token de 192 bits, expira en 1h, invalida todas las sesiones activas al cambiar la contraseña, respuesta genérica que no confirma si un email existe — mismo patrón ya establecido para verificación de email. Los dos gaps menores encontrados aquí son los hallazgos #13 arriba.
-- **Borrado de cuenta** (`handleDeleteAccount`): re-pide contraseña con su propio rate-limit por cuenta; borra sesiones, auditorías, planes y comentarios del usuario correcto únicamente.
-- **`db-sqlite.js`**: todas las queries usan `.prepare()` con placeholders `?` — cero construcción de SQL por concatenación, sin superficie de inyección.
-- **`apps/extension/content-script.js`** (primera vez en el alcance de esta auditoría): sin `innerHTML`/`insertAdjacentHTML`/`outerHTML` en ningún punto — mismo patrón limpio que `popup.js` y `background.js`, ya verificados en la pasada 1.
-- **Paso de Stripe a plan único** (1 nov 2026): se revisó específicamente por posibles referencias colgantes tras quitar el split `content`/`engage` — ninguna encontrada; el helper `isEngageTier()` quedó sin ningún llamador tras el cambio y se eliminó en vez de dejarlo como alias muerto.
-- **CORS**: no se fijan cabeceras `Access-Control-Allow-*` en ningún punto — correcto por omisión para una app same-origin; nada que cambiar.
-- **Flujo OAuth (CSRF del `state`)**: `state` sigue siendo aleatorio de 128 bits, de un solo uso (se borra al consumirse) y con expiración — sin cambios desde la pasada 1, sin hallazgos nuevos.
+- **Email ecosystem** (`email.js` rewrite, scheduled `checkStalePlansAndRemind` job): inserts no user-controlled content into HTML without escaping; the Stripe triggers (welcome, cancellation notice) use data that already passed webhook signature verification, not direct caller input.
+- **`forgot-password` / `reset-password`** (routes + pages): 192-bit token, expires in 1h, invalidates every active session on password change, and returns a generic response that doesn't confirm whether an email exists — same pattern already established for email verification. The two minor gaps found here are findings #13 above.
+- **Account deletion** (`handleDeleteAccount`): re-prompts for the password with its own per-account rate-limit; deletes only the correct user's sessions, audits, plans, and comments.
+- **`db-sqlite.js`**: every query uses `.prepare()` with `?` placeholders — zero SQL built by string concatenation, no injection surface.
+- **`apps/extension/content-script.js`** (in this audit's scope for the first time): no `innerHTML`/`insertAdjacentHTML`/`outerHTML` anywhere — same clean pattern already verified in `popup.js` and `background.js` during Pass 1.
+- **Move to a single Stripe plan** (Nov 1, 2026): specifically reviewed for dangling references after removing the `content`/`engage` split — none found; the `isEngageTier()` helper was left with zero callers after the change and was deleted rather than kept as a dead alias.
+- **CORS:** no `Access-Control-Allow-*` headers are set anywhere — correct by default for a same-origin app; nothing to change.
+- **OAuth flow (`state` CSRF protection):** `state` is still 128-bit random, single-use (deleted on consumption), and time-limited — unchanged since Pass 1, no new findings.
 
-## 🧩 Lecciones / takeaways de esta pasada
+## 🧩 Lessons / takeaways from this pass
 
-- Un hallazgo de pasada 1 (token sin comparación constant-time) es un patrón, no un caso aislado — aparece de nuevo en cuanto el proyecto suma una segunda ruta con un token de un solo uso. Vale la pena generalizarlo a un helper compartido la primera vez que aparece, no la tercera.
-- La ausencia de `.gitignore` no era explotable hoy (no hay repo git local todavía), pero es exactamente el tipo de cosa que conviene arreglar *antes* de que haga falta, no después de un `git add -A` apresurado — mismo espíritu que llevó a crear este mismo log de seguridad en su propio repo.
-- Una refactorización de producto (el paso de dos tiers de Stripe a uno) es también un buen momento para barrer código muerto: un helper que pierde todos sus llamadores en el mismo cambio es fácil de dejar "por si acaso" y es mejor quitarlo mientras se tiene el contexto fresco de por qué ya no hace falta.
+- A Pass 1 finding (a token without constant-time comparison) is a pattern, not a one-off — it resurfaces the moment the project adds a second route with a one-time token. Worth generalizing into a shared helper the first time it shows up, not the third.
+- The missing `.gitignore` wasn't exploitable today (no local git repo yet), but it's exactly the kind of thing worth fixing *before* it's needed rather than after a rushed `git add -A` — the same instinct that led to creating this very security log in its own repo.
+- A product refactor (collapsing two Stripe tiers into one) is also a good moment to sweep dead code: a helper that loses every caller in the same change is easy to leave "just in case," and easier to remove while the context for why it's no longer needed is still fresh.
